@@ -1,5 +1,11 @@
 import * as db from '../models/db.js';
 
+// Helper function to get full image URL
+const getFullImageUrl = (filename) => {
+    const baseUrl = process.env.BACKEND_URL || 'https://postgre-app-backend.onrender.com';
+    return `${baseUrl}/uploads/${filename}`;
+};
+
 export const uploadPost = async (req, res) => {
     const { caption } = req.body;
     const files = req.files;
@@ -21,13 +27,13 @@ export const uploadPost = async (req, res) => {
         );
         
         const postId = postRes.rows[0].id;
-        console.log('Created post with ID:', postId); // Debug log
+        console.log('Created post with ID:', postId);
 
-        // Insert all images
+        // Insert all images with FULL URLs
         const imageInsertPromises = files.map(file => {
             return client.query(
                 'INSERT INTO post_images (post_id, image_url) VALUES ($1, $2)',
-                [postId, `/uploads/${file.filename}`]
+                [postId, getFullImageUrl(file.filename)]
             );
         });
 
@@ -50,7 +56,9 @@ export const uploadPost = async (req, res) => {
 
 export const getAllPosts = async (req, res) => {
     try {
-        // Get posts with their images
+        const baseUrl = process.env.BACKEND_URL || 'https://postgre-app-backend.onrender.com';
+        
+        // Get posts with their images - ensuring all URLs are full URLs
         const result = await db.query(`
             SELECT 
                 p.*,
@@ -58,7 +66,11 @@ export const getAllPosts = async (req, res) => {
                     json_agg(
                         json_build_object(
                             'id', pi.id,
-                            'image_url', pi.image_url
+                            'image_url', 
+                            CASE 
+                                WHEN pi.image_url LIKE 'http%' THEN pi.image_url
+                                ELSE CONCAT('${baseUrl}', pi.image_url)
+                            END
                         )
                     ) FILTER (WHERE pi.id IS NOT NULL),
                     '[]'
