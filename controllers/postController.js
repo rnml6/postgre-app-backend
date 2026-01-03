@@ -10,25 +10,24 @@ export const uploadPost = async (req, res) => {
 
     let client;
     try {
+        // Get a client from the pool
         client = await db.pool.connect();
         await client.query('BEGIN');
 
+        // Insert post and get the ID
         const postRes = await client.query(
             'INSERT INTO posts (caption) VALUES ($1) RETURNING id',
             [caption || null]
         );
         
         const postId = postRes.rows[0].id;
-        
-        // Get your server URL (use environment variable in production)
-        const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3000}`;
-        
+        console.log('Created post with ID:', postId); // Debug log
+
+        // Insert all images
         const imageInsertPromises = files.map(file => {
-            // Store full URL instead of just the path
-            const fullImageUrl = `${serverUrl}/uploads/${file.filename}`;
             return client.query(
                 'INSERT INTO post_images (post_id, image_url) VALUES ($1, $2)',
-                [postId, fullImageUrl]
+                [postId, `/uploads/${file.filename}`]
             );
         });
 
@@ -51,9 +50,7 @@ export const uploadPost = async (req, res) => {
 
 export const getAllPosts = async (req, res) => {
     try {
-        // If you want to ensure all images have full URLs
-        const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 3000}`;
-        
+        // Get posts with their images
         const result = await db.query(`
             SELECT 
                 p.*,
@@ -61,11 +58,7 @@ export const getAllPosts = async (req, res) => {
                     json_agg(
                         json_build_object(
                             'id', pi.id,
-                            'image_url', 
-                            CASE 
-                                WHEN pi.image_url LIKE 'http%' THEN pi.image_url
-                                ELSE CONCAT($1, pi.image_url)
-                            END
+                            'image_url', pi.image_url
                         )
                     ) FILTER (WHERE pi.id IS NOT NULL),
                     '[]'
@@ -75,7 +68,7 @@ export const getAllPosts = async (req, res) => {
             LEFT JOIN post_images pi ON p.id = pi.post_id
             GROUP BY p.id
             ORDER BY p.created_at DESC
-        `, [serverUrl]);
+        `);
 
         res.status(200).json({ success: true, data: result.rows });
     } catch (err) {
